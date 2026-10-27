@@ -5,6 +5,7 @@ import (
 	"os"
 )
 
+// предоставляет срез содержимого директории по переданному пути, если возможно
 func ListDir(filePath string) ([]os.DirEntry, error) {
 	entries, err := os.ReadDir(filePath)
 	if err == nil {

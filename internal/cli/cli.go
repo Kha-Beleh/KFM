@@ -9,6 +9,9 @@ import (
 	"github.com/Kha-Beleh/KFM/internal/filesystem"
 )
 
+// главный цикл программы, выводит ">" в Stdout,
+//
+//	считывает ввод и отправляет его в ExecCmd()
 func Run() error {
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
@@ -27,28 +30,27 @@ func Run() error {
 	}
 }
 
+// выполняет разбор переданной пользователем строки и вызывает нужную команду
 func ExecCmd(cmd string) (bool, error) {
+	// отделяем только команду, т.к. у разных команд разное кол-во аргументов
 	cmd, arg, _ := strings.Cut(cmd, " ")
 	shouldExit := false
 	var err error
 	switch cmd {
 	case "help":
-		PrintHelp()
+		HandlerHelp()
 
 	case "ls":
-		var entries []os.DirEntry
-		arg = strings.TrimLeft(arg, " ")
-		if arg == "" {
-			arg = "."
+		dirpath := strings.TrimLeft(arg, " ")
+		if dirpath == "" {
+			dirpath = "."
 		}
-		entries, err = filesystem.ListDir(arg)
-		if err == nil {
-			PrintDir(entries)
-		}
+		err = HandlerListDir(dirpath)
 
 	case "exit":
 		shouldExit = true
 
+	// пустой ввод игнорируется
 	case "":
 
 	default:
@@ -57,17 +59,22 @@ func ExecCmd(cmd string) (bool, error) {
 	return shouldExit, err
 }
 
-func PrintDir(entries []os.DirEntry) {
-	if len(entries) == 0 {
-		fmt.Println("каталог пуст")
-		return
+// выводит название элементов среза содержимого директории
+func HandlerListDir(dirpath string) error {
+	entries, err := filesystem.ListDir(dirpath)
+	if err != nil {
+		return err
 	}
 	for _, entry := range entries {
 		fmt.Println(entry.Name())
 	}
+	if len(entries) == 0 {
+		fmt.Println("каталог пуст")
+	}
+	return nil
 }
 
-func PrintHelp() {
+func HandlerHelp() {
 	fmt.Println("Доступные команды:")
 	fmt.Println("help - список всех команд с описанием назначения каждой")
 	fmt.Println("ls path - вывод содержимого директории, где path - путь к директории")
