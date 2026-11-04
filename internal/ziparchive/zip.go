@@ -184,7 +184,8 @@ func extractArchive(root *os.Root, reader *zip.Reader, destination string) (err 
 		if member.UncompressedSize64 > MaxFileSize || member.UncompressedSize64 > MaxTotalSize-total {
 			return fmt.Errorf("превышен размер распакованных данных")
 		}
-		if member.UncompressedSize64 > 1000000 && member.UncompressedSize64/(member.CompressedSize64+1) > 1000 {
+		minCompressedSize := (member.UncompressedSize64 + 999) / 1000
+		if member.UncompressedSize64 > 1000000 && member.CompressedSize64 < minCompressedSize {
 			return fmt.Errorf("подозрительный коэффициент сжатия")
 		}
 		total += member.UncompressedSize64
