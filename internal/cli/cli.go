@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Kha-Beleh/KFM/internal/filesystem"
@@ -58,13 +59,22 @@ func ExecCmd(cmd string, workDir string) (string, bool, error) {
 
 	case "cd":
 		dirpath := strings.TrimLeft(arg, " ")
+		if (dirpath == "/" || dirpath == "\\") && runtime.GOOS == "windows" {
+			dirpath = filepath.Join(filepath.VolumeName(workDir), "\\")
+		}
 		if filepath.IsAbs(dirpath) {
-			workDir = dirpath
+			_, err = os.Stat(dirpath)
+			if err == nil {
+				workDir = dirpath
+			}
 		} else {
-			_, err := os.Stat(filepath.Join(workDir, dirpath))
+			_, err = os.Stat(filepath.Join(workDir, dirpath))
 			if err == nil {
 				workDir = filepath.Join(workDir, dirpath)
 			}
+		}
+		if err != nil {
+			err = fmt.Errorf("директории %s не существует: %v", dirpath, err)
 		}
 
 	case "drives":
