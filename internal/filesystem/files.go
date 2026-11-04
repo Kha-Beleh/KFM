@@ -16,3 +16,14 @@ func ListDir(filePath string) ([]os.DirEntry, error) {
 	}
 	return nil, fmt.Errorf("не удалось прочитать каталог %q: %w", filePath, err)
 }
+
+// создает пустой файл
+func CreateFile(filePath string) error {
+	file, err := os.OpenFile(filePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0666)
+	if err != nil {
+		err = fmt.Errorf("не удалось создать файл %q: %w", filePath, err)
+		return err
+	}
+	err = file.Close()
+	return err
+}

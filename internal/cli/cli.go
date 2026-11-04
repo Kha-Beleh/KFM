@@ -56,6 +56,9 @@ func ExecCmd(cmd string, workDir string) (string, bool, error) {
 	case "drives":
 		HandlerDrivesInfo()
 
+	case "touch":
+		err = HandlerTouch(arg, workDir)
+
 	case "exit":
 		shouldExit = true
 
@@ -66,6 +69,19 @@ func ExecCmd(cmd string, workDir string) (string, bool, error) {
 		err = fmt.Errorf("команда не распознана")
 	}
 	return workDir, shouldExit, err
+}
+
+func HandlerTouch(filePath string, workDir string) error {
+	filePath = strings.TrimLeft(filePath, " ")
+	if filePath == "" {
+		err := fmt.Errorf("укажите имя файла или путь к нему")
+		return err
+	}
+	if !filepath.IsAbs(filePath) {
+		filePath = filepath.Join(workDir, filePath)
+	}
+	err := filesystem.CreateFile(filePath)
+	return err
 }
 
 func HandlerChangeDir(arg string, workDir string) (string, error) {
@@ -86,7 +102,7 @@ func HandlerChangeDir(arg string, workDir string) (string, error) {
 		}
 	}
 	if err != nil {
-		err = fmt.Errorf("директории %s не существует: %v", dirpath, err)
+		err = fmt.Errorf("директории %q не существует: %w", dirpath, err)
 	}
 	return workDir, err
 }
@@ -126,5 +142,6 @@ func HandlerHelp() {
 	fmt.Println("ls <path> - вывод содержимого директории, где path - путь к директории")
 	fmt.Println("cd <path> - изменение рабочей директории на path, где path - путь к директории")
 	fmt.Println("drives - вывести информацию о дисках")
+	fmt.Println("touch <path> - создаёт новый пустой файл path; если файл существует, возвращает ошибку, где path - путь к файлу")
 	fmt.Println("exit - выход")
 }
