@@ -1,4 +1,4 @@
-package filesystem
+package filesystem // модуль работы с файловой системой
 
 import "github.com/shirou/gopsutil/v4/disk"
 

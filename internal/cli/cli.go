@@ -1,4 +1,4 @@
-package cli
+package cli // модуль консольного интерфейса
 
 import (
 	"bufio"
@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Kha-Beleh/KFM/internal/filesystem"
+	"github.com/Kha-Beleh/KFM/internal/textfile"
 )
 
 // главный цикл программы, выводит ">" в Stdout,
@@ -62,6 +63,9 @@ func ExecCmd(cmd string, workDir string) (string, bool, error) {
 	case "rm":
 		err = HandlerRemove(arg, workDir)
 
+	case "cat":
+		err = HandlerCat(arg, workDir)
+
 	case "exit":
 		shouldExit = true
 
@@ -72,6 +76,23 @@ func ExecCmd(cmd string, workDir string) (string, bool, error) {
 		err = fmt.Errorf("команда не распознана")
 	}
 	return workDir, shouldExit, err
+}
+
+func HandlerCat(filePath string, workDir string) error {
+	filePath = strings.TrimLeft(filePath, " ")
+	if filePath == "" {
+		err := fmt.Errorf("укажите имя файла или путь к нему")
+		return err
+	}
+	if !filepath.IsAbs(filePath) {
+		filePath = filepath.Join(workDir, filePath)
+	}
+	readed, err := textfile.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s", readed)
+	return nil
 }
 
 func HandlerRemove(filePath string, workDir string) error {
@@ -160,5 +181,6 @@ func HandlerHelp() {
 	fmt.Println("drives - вывести информацию о дисках")
 	fmt.Println("touch <path> - создаёт новый пустой файл path; если файл существует, возвращает ошибку, где path - путь к файлу")
 	fmt.Println("rm <path> - удаляет файл path, где path - путь к файлу")
+	fmt.Println("cat <path> - выводит содержимое файла path, где path - путь к файлу")
 	fmt.Println("exit - выход")
 }
