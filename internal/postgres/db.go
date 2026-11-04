@@ -90,6 +90,14 @@ func (store *Store) GetUser(name string) (User, error) {
 	return user, err
 }
 
+// связывает вход с пользователем журнала
+func (store *Store) AssignUser(id int64, userID int64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := store.DB.ExecContext(ctx, `UPDATE operations SET user_id=$2 WHERE id=$1 AND user_id IS NULL`, id, userID)
+	return err
+}
+
 // фиксирует начало операции
 func (store *Store) Start(userID int64, command string, path string) (int64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -132,7 +140,7 @@ func (store *Store) FinishFiles(id int64, userID int64, files []File, operationE
 	if operationErr != nil {
 		status, message = "failed", operationErr.Error()
 	}
-	_, err = tx.ExecContext(ctx, `SELECT kfm_finish_operation($1,$2,$3,$4,$5)`, id, userID, fileID, status, message)
+	_, err = tx.ExecContext(ctx, `SELECT kfm_record_result($1,$2,$3,$4,$5)`, id, userID, fileID, status, message)
 	if err != nil {
 		return err
 	}

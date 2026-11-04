@@ -6,11 +6,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
-	"unicode/utf8"
 
+	"github.com/Kha-Beleh/KFM/internal/auth"
 	"github.com/Kha-Beleh/KFM/internal/filesystem"
+	"github.com/Kha-Beleh/KFM/internal/postgres"
 	"github.com/Kha-Beleh/KFM/internal/textfile"
 )
 
@@ -18,6 +18,15 @@ import (
 //
 //	считывает ввод и отправляет его в ExecCmd()
 func Run() error {
+	store, err := postgres.Open(os.Getenv("KFM_DATABASE_URL"))
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	if err = store.Migrate(); err != nil {
+		return fmt.Errorf("не удалось подготовить БД: %w", err)
+	}
+	state := appState{store: store, auth: &auth.Service{Store: store}}
 	var shouldExit bool
 	workDir, err := os.Getwd()
 	if err != nil {
@@ -26,14 +35,51 @@ func Run() error {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 4096), textfile.MaxFileSize+2)
 	for {
-		fmt.Printf("%s > ", workDir)
+		fmt.Printf("%s > ", safeText(workDir))
 		ok := scanner.Scan()
 		if !ok {
 			return scanner.Err()
 		}
-		workDir, shouldExit, err = ExecCmd(scanner.Text(), workDir, scanner)
+		line := scanner.Text()
+		command, args, _ := strings.Cut(line, " ")
+		if command == "" {
+			continue
+		}
+		userID := state.user.ID
+		path := args
+		if command == "login" || command == "register" {
+			path = ""
+		}
+		id, startErr := store.Start(userID, command, path)
+		if startErr != nil {
+			return fmt.Errorf("не удалось записать начало команды: %w", startErr)
+		}
+		var files []postgres.File
+		if userID != 0 {
+			files = commandFiles(command, args, workDir, false)
+		}
+		workDir, shouldExit, err = ExecCmd(line, workDir, scanner, &state)
+		if userID == 0 && state.user.ID != 0 {
+			userID = state.user.ID
+			if assignErr := store.AssignUser(id, userID); assignErr != nil {
+				return assignErr
+			}
+		}
+		if command == "rm" && err == nil {
+			for i := range files {
+				files[i].Deleted = true
+			}
+		} else if userID != 0 {
+			files = commandFiles(command, args, workDir, true)
+		}
+		if userID == 0 {
+			files = nil
+		}
+		if finishErr := store.FinishFiles(id, userID, files, err); finishErr != nil {
+			return fmt.Errorf("не удалось сохранить результат команды: %w", finishErr)
+		}
 		if err != nil {
-			fmt.Printf("ошибка: %v\n", err)
+			fmt.Printf("ошибка: %s\n", safeText(err.Error()))
 		}
 		if shouldExit {
 			return nil
@@ -42,12 +88,25 @@ func Run() error {
 }
 
 // выполняет разбор переданной пользователем строки и вызывает нужную команду
-func ExecCmd(cmd string, workDir string, scanner *bufio.Scanner) (string, bool, error) {
+func ExecCmd(cmd string, workDir string, scanner *bufio.Scanner, state *appState) (string, bool, error) {
 	// отделяем только команду, т.к. у разных команд разное кол-во аргументов
 	cmd, arg, _ := strings.Cut(cmd, " ")
 	shouldExit := false
 	var err error
+	if state != nil && state.user.ID == 0 && cmd != "help" && cmd != "login" && cmd != "register" && cmd != "exit" && cmd != "" {
+		return workDir, false, fmt.Errorf("сначала выполните login")
+	}
 	switch cmd {
+	case "register", "login":
+		err = handlerAuth(cmd, arg, scanner, state)
+	case "logout":
+		if state == nil {
+			err = fmt.Errorf("приложение не подключено к БД")
+		} else {
+			state.user = postgres.User{}
+		}
+	case "history":
+		err = handlerHistory(state)
 	case "help":
 		handlerHelp()
 
@@ -71,6 +130,14 @@ func ExecCmd(cmd string, workDir string, scanner *bufio.Scanner) (string, bool, 
 
 	case "write":
 		err = handlerWrite(arg, workDir, scanner)
+	case "append":
+		err = handlerAppend(arg, workDir, scanner)
+	case "json-read", "json-write", "xml-read", "xml-write":
+		err = handlerStructured(cmd, arg, workDir, scanner)
+	case "zip", "unzip":
+		err = handlerArchive(cmd, arg, workDir)
+	case "pwd":
+		fmt.Println(workDir)
 
 	case "exit":
 		shouldExit = true
@@ -85,62 +152,11 @@ func ExecCmd(cmd string, workDir string, scanner *bufio.Scanner) (string, bool, 
 }
 
 func handlerWrite(args string, workDir string, scanner *bufio.Scanner) error {
-	args = strings.TrimSpace(args)
-	separator := strings.LastIndexAny(args, " \t")
-	if separator < 0 {
-		return fmt.Errorf("использование: write <путь> <количество строк>")
-	}
-	filePath := strings.TrimSpace(args[:separator])
-	if filePath == "" {
-		return fmt.Errorf("укажите имя файла или путь к нему")
-	}
-	nStrings, err := strconv.Atoi(args[separator+1:])
+	name, data, err := readWriteInput(args, workDir, scanner)
 	if err != nil {
-		return fmt.Errorf("не удалось определить количество строк: %w", err)
+		return err
 	}
-	if nStrings < 1 || nStrings > textfile.MaxFileSize {
-		return fmt.Errorf("количество строк должно быть от 1 до %d", textfile.MaxFileSize)
-	}
-	if !filepath.IsAbs(filePath) {
-		filePath = filepath.Join(workDir, filePath)
-	}
-	if scanner == nil {
-		return fmt.Errorf("не задан источник ввода текста")
-	}
-
-	fmt.Printf("Содержимое файла %q будет заменено после успешного ввода. Введите %d строк:\n", filePath, nStrings)
-	var lines [][]byte
-	var inputErr error
-	totalSize := 0
-	for i := 0; i < nStrings; i++ {
-		if !scanner.Scan() {
-			if err = scanner.Err(); err != nil {
-				return fmt.Errorf("не удалось прочитать текст: %w", err)
-			}
-			return fmt.Errorf("ввод завершён: получено %d из %d строк; файл не изменён", i, nStrings)
-		}
-		// После ошибки пропускаем оставшиеся строки блока, не выполняя их как команды
-		if inputErr != nil {
-			continue
-		}
-		line := scanner.Bytes()
-		switch {
-		case len(line) > textfile.MaxLineSize:
-			inputErr = fmt.Errorf("строка %d превышает 10 Кбайт; файл не изменён", i+1)
-		case !utf8.Valid(line):
-			inputErr = fmt.Errorf("строка %d не соответствует UTF-8; файл не изменён", i+1)
-		case len(line)+1 > textfile.MaxFileSize-totalSize:
-			inputErr = fmt.Errorf("текст превышает 1 Мбайт; файл не изменён")
-		default:
-			// Scanner переиспользует буфер, поэтому сохраняем копию строки.
-			lines = append(lines, []byte(scanner.Text()))
-			totalSize += len(line) + 1
-		}
-	}
-	if inputErr != nil {
-		return inputErr
-	}
-	return textfile.WriteToFile(filePath, lines)
+	return writeData(name, data)
 }
 
 func handlerCat(filePath string, workDir string) error {
@@ -156,7 +172,7 @@ func handlerCat(filePath string, workDir string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s", readed)
+	fmt.Printf("%s", safeText(string(readed)))
 	return nil
 }
 
@@ -193,12 +209,20 @@ func handlerChangeDir(arg string, workDir string) (string, error) {
 		dirpath = filepath.Join(filepath.VolumeName(workDir), "\\")
 	}
 	if filepath.IsAbs(dirpath) {
-		_, err = os.Stat(dirpath)
+		var info os.FileInfo
+		info, err = os.Stat(dirpath)
+		if err == nil && !info.IsDir() {
+			err = fmt.Errorf("путь не является каталогом")
+		}
 		if err == nil {
 			workDir = dirpath
 		}
 	} else {
-		_, err = os.Stat(filepath.Join(workDir, dirpath))
+		var info os.FileInfo
+		info, err = os.Stat(filepath.Join(workDir, dirpath))
+		if err == nil && !info.IsDir() {
+			err = fmt.Errorf("путь не является каталогом")
+		}
 		if err == nil {
 			workDir = filepath.Join(workDir, dirpath)
 		}
@@ -230,7 +254,7 @@ func handlerListDir(arg string, workDir string) error {
 		return err
 	}
 	for _, entry := range entries {
-		fmt.Println(entry.Name())
+		fmt.Println(safeText(entry.Name()))
 	}
 	if len(entries) == 0 {
 		fmt.Println("каталог пуст")
@@ -241,6 +265,11 @@ func handlerListDir(arg string, workDir string) error {
 func handlerHelp() {
 	fmt.Println("Доступные команды:")
 	fmt.Println("help - список всех команд с описанием назначения каждой")
+	fmt.Println("register <login> - регистрация; пароль вводится отдельно")
+	fmt.Println("login <login> - вход для записи действий от имени пользователя")
+	fmt.Println("logout - выход из учётной записи")
+	fmt.Println("history - последние 100 действий пользователя")
+	fmt.Println("pwd - текущий рабочий каталог")
 	fmt.Println("ls <path> - вывод содержимого директории, где path - путь к директории")
 	fmt.Println("cd <path> - изменение рабочей директории на path, где path - путь к директории")
 	fmt.Println("drives - вывести информацию о дисках")
@@ -248,5 +277,9 @@ func handlerHelp() {
 	fmt.Println("rm <path> - удаляет файл path, где path - путь к файлу")
 	fmt.Println("cat <path> - выводит содержимое файла path, где path - путь к файлу")
 	fmt.Println("write <path> <n> - заменяет содержимое существующего файла n строками UTF-8 (строка до 10 Кбайт, файл до 1 Мбайт)")
+	fmt.Println("append <path> <n> - добавляет n строк в конец файла")
+	fmt.Println("json-read <path>, xml-read <path> - разбор и вывод данных")
+	fmt.Println("json-write <path> <n>, xml-write <path> <n> - проверка и сохранение данных")
+	fmt.Println("zip <source> <archive>, unzip <archive> <new-directory> - ZIP; пути с пробелами заключайте в кавычки")
 	fmt.Println("exit - выход")
 }

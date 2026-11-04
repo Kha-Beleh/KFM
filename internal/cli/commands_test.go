@@ -50,7 +50,7 @@ func TestExecCmdControlCommands(t *testing.T) {
 	} {
 		t.Run(tc.command, func(t *testing.T) {
 			captureOutput(t, func() {
-				gotDir, exit, err := ExecCmd(tc.command, dir, nil)
+				gotDir, exit, err := ExecCmd(tc.command, dir, nil, nil)
 				if gotDir != dir || exit != tc.exit || (err != nil) != tc.wantErr {
 					t.Errorf("unexpected result: dir=%q exit=%v err=%v", gotDir, exit, err)
 				}
@@ -81,31 +81,31 @@ func TestExecCmdCRUD(t *testing.T) {
 			scanner := bufio.NewScanner(strings.NewReader("первая\n\nпоследняя\n"))
 			captureOutput(t, func() {
 				for _, command := range []string{"touch   " + arg, "write " + arg + " 3"} {
-					gotDir, exit, err := ExecCmd(command, dir, scanner)
+					gotDir, exit, err := ExecCmd(command, dir, scanner, nil)
 					if err != nil || exit || gotDir != dir {
 						t.Fatalf("%q: dir=%q exit=%v err=%v", command, gotDir, exit, err)
 					}
 				}
 			})
 			output := captureOutput(t, func() {
-				if _, _, err := ExecCmd("cat "+arg, dir, scanner); err != nil {
+				if _, _, err := ExecCmd("cat "+arg, dir, scanner, nil); err != nil {
 					t.Fatal(err)
 				}
 			})
 			if output != "первая\n\nпоследняя\n" {
 				t.Fatalf("cat output: %q", output)
 			}
-			if _, _, err := ExecCmd("touch "+arg, dir, scanner); err == nil {
+			if _, _, err := ExecCmd("touch "+arg, dir, scanner, nil); err == nil {
 				t.Fatal("touch should reject an existing file")
 			}
-			if _, _, err := ExecCmd("rm "+arg, dir, scanner); err != nil {
+			if _, _, err := ExecCmd("rm "+arg, dir, scanner, nil); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(path); !os.IsNotExist(err) {
 				t.Fatalf("rm did not delete file: %v", err)
 			}
 			for _, command := range []string{"cat " + arg, "rm " + arg} {
-				if _, _, err := ExecCmd(command, dir, scanner); err == nil {
+				if _, _, err := ExecCmd(command, dir, scanner, nil); err == nil {
 					t.Errorf("%q should reject missing file", command)
 				}
 			}
@@ -184,9 +184,11 @@ func TestChangeDir(t *testing.T) {
 }
 
 func TestRunReadsCommandsAndTextFromSameInput(t *testing.T) {
+	_, address := testDatabase(t)
+	t.Setenv("KFM_DATABASE_URL", address)
 	dir := t.TempDir()
 	inputPath := filepath.Join(t.TempDir(), "stdin.txt")
-	script := "cd " + dir + "\ntouch note.txt\nwrite note.txt 2\nhello\nмир\ncat note.txt\nrm note.txt\nexit\n"
+	script := "register student\nstudent password 123\nlogin student\nstudent password 123\ncd " + dir + "\ntouch note.txt\nwrite note.txt 2\nhello\nмир\ncat note.txt\nrm note.txt\nexit\n"
 	if err := os.WriteFile(inputPath, []byte(script), 0600); err != nil {
 		t.Fatal(err)
 	}

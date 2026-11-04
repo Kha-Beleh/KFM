@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS operations (
     user_id BIGINT REFERENCES users(id)
 );
 CREATE INDEX IF NOT EXISTS operations_user_id ON operations(user_id,id DESC);
-CREATE OR REPLACE FUNCTION kfm_finish_operation(
+CREATE OR REPLACE FUNCTION kfm_record_result(
     operation_id BIGINT, owner BIGINT, target BIGINT, result TEXT, message TEXT
 ) RETURNS VOID LANGUAGE plpgsql AS $$
 BEGIN

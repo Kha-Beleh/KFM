@@ -15,7 +15,7 @@ func TestHandlerWriteReadsBlockAndPreservesNextCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	scanner := bufio.NewScanner(strings.NewReader("первая\r\n\r\nпоследняя\r\nexit\r\n"))
-	_, exit, err := ExecCmd("write my notes.txt 3", dir, scanner)
+	_, exit, err := ExecCmd("write my notes.txt 3", dir, scanner, nil)
 	if err != nil || exit {
 		t.Fatalf("unexpected command result: %v, %v", exit, err)
 	}
