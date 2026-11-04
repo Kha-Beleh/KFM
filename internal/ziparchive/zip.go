@@ -41,7 +41,7 @@ func validName(name string) bool {
 }
 
 // создаёт ZIP из файла или каталога
-func Create(root *os.Root, source string, destination string) error {
+func buildArchive(root *os.Root, source string, destination string) ([]byte, error) {
 	var data bytes.Buffer
 	writer := zip.NewWriter(&data)
 	count, total := 0, int64(0)
@@ -109,19 +109,28 @@ func Create(root *os.Root, source string, destination string) error {
 	})
 	if err != nil {
 		writer.Close()
-		return err
+		return nil, err
 	}
 	if err = writer.Close(); err != nil {
-		return err
+		return nil, err
 	}
 	if data.Len() > MaxArchiveSize {
-		return fmt.Errorf("архив слишком большой")
+		return nil, fmt.Errorf("архив слишком большой")
+	}
+	return data.Bytes(), nil
+}
+
+// создаёт архив внутри указанного корня
+func Create(root *os.Root, source string, destination string) error {
+	data, err := buildArchive(root, source, destination)
+	if err != nil {
+		return err
 	}
 	file, err := root.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
-	_, err = file.Write(data.Bytes())
+	_, err = file.Write(data)
 	closeErr := file.Close()
 	if err == nil {
 		err = closeErr
@@ -150,6 +159,11 @@ func Extract(root *os.Root, archivePath string, destination string) (err error) 
 	if err != nil {
 		return err
 	}
+	return extractArchive(root, reader, destination)
+}
+
+// проверяет архив и извлекает его в новый каталог
+func extractArchive(root *os.Root, reader *zip.Reader, destination string) (err error) {
 	if len(reader.File) > MaxFiles {
 		return fmt.Errorf("слишком много элементов в архиве")
 	}
@@ -205,6 +219,83 @@ func Extract(root *os.Root, archivePath string, destination string) (err error) 
 		}
 	}
 	return nil
+}
+
+// создаёт ZIP по обычным системным путям
+func CreateFile(source string, destination string) error {
+	source, err := filepath.Abs(source)
+	if err != nil {
+		return err
+	}
+	destination, err = filepath.Abs(destination)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(source)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		relative, relErr := filepath.Rel(source, destination)
+		if relErr == nil && filepath.IsLocal(relative) {
+			return fmt.Errorf("архив должен находиться вне исходного каталога")
+		}
+	}
+	root, err := os.OpenRoot(filepath.Dir(source))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	data, err := buildArchive(root, filepath.Base(source), "")
+	if err != nil {
+		return err
+	}
+	file, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	n, writeErr := file.Write(data)
+	closeErr := file.Close()
+	if writeErr == nil && n != len(data) {
+		writeErr = io.ErrShortWrite
+	}
+	if writeErr == nil {
+		writeErr = closeErr
+	}
+	if writeErr != nil {
+		os.Remove(destination)
+	}
+	return writeErr
+}
+
+// извлекает ZIP с ограничением только каталогом назначения
+func ExtractFile(archivePath string, destination string) error {
+	file, err := os.Open(archivePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() > MaxArchiveSize {
+		return fmt.Errorf("нужен обычный ZIP-файл до 32 Мбайт")
+	}
+	reader, err := zip.NewReader(file, info.Size())
+	if err != nil {
+		return err
+	}
+	destination, err = filepath.Abs(destination)
+	if err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(filepath.Dir(destination))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return extractArchive(root, reader, filepath.Base(destination))
 }
 
 // извлекает один файл с проверкой фактического размера

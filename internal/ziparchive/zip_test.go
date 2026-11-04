@@ -102,6 +102,25 @@ func TestZIPRejectsCorruptArchive(t *testing.T) {
 	}
 }
 
+func TestZIPUsesIndependentSystemPaths(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "source.txt")
+	archive := filepath.Join(t.TempDir(), "archive.zip")
+	destination := filepath.Join(t.TempDir(), "unpacked")
+	if err := os.WriteFile(source, []byte("system paths"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CreateFile(source, archive); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExtractFile(archive, destination); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(destination, "source.txt"))
+	if err != nil || string(data) != "system paths" {
+		t.Fatalf("contents: %q %v", data, err)
+	}
+}
+
 func makeArchive(t *testing.T, root *os.Root, names []string, data []byte, link bool) {
 	t.Helper()
 	var buffer bytes.Buffer
