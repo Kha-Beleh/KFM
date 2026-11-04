@@ -59,6 +59,9 @@ func ExecCmd(cmd string, workDir string) (string, bool, error) {
 	case "touch":
 		err = HandlerTouch(arg, workDir)
 
+	case "rm":
+		err = HandlerRemove(arg, workDir)
+
 	case "exit":
 		shouldExit = true
 
@@ -69,6 +72,19 @@ func ExecCmd(cmd string, workDir string) (string, bool, error) {
 		err = fmt.Errorf("команда не распознана")
 	}
 	return workDir, shouldExit, err
+}
+
+func HandlerRemove(filePath string, workDir string) error {
+	filePath = strings.TrimLeft(filePath, " ")
+	if filePath == "" {
+		err := fmt.Errorf("укажите имя файла или путь к нему")
+		return err
+	}
+	if !filepath.IsAbs(filePath) {
+		filePath = filepath.Join(workDir, filePath)
+	}
+	err := filesystem.RemoveFile(filePath)
+	return err
 }
 
 func HandlerTouch(filePath string, workDir string) error {
@@ -143,5 +159,6 @@ func HandlerHelp() {
 	fmt.Println("cd <path> - изменение рабочей директории на path, где path - путь к директории")
 	fmt.Println("drives - вывести информацию о дисках")
 	fmt.Println("touch <path> - создаёт новый пустой файл path; если файл существует, возвращает ошибку, где path - путь к файлу")
+	fmt.Println("rm <path> - удаляет файл path, где path - путь к файлу")
 	fmt.Println("exit - выход")
 }

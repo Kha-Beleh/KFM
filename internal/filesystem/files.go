@@ -27,3 +27,22 @@ func CreateFile(filePath string) error {
 	err = file.Close()
 	return err
 }
+
+// удаляет файл
+func RemoveFile(filePath string) error {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		err = fmt.Errorf("не удалось удалить файл %q: %w", filePath, err)
+		return err
+	}
+	if info.IsDir() {
+		err = fmt.Errorf("rm удаляет только файлы")
+		return err
+	}
+	err = os.Remove(filePath)
+	if err != nil {
+		err = fmt.Errorf("не удалось удалить файл %q: %w", filePath, err)
+		return err
+	}
+	return nil
+}
