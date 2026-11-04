@@ -67,6 +67,9 @@ func ExecCmd(cmd string, workDir string) (string, bool, error) {
 			}
 		}
 
+	case "drives":
+		HandlerDrivesInfo()
+
 	case "exit":
 		shouldExit = true
 
@@ -77,6 +80,14 @@ func ExecCmd(cmd string, workDir string) (string, bool, error) {
 		err = fmt.Errorf("команда не распознана")
 	}
 	return workDir, shouldExit, err
+}
+
+func HandlerDrivesInfo() {
+	disks, _ := filesystem.ListDrivesInfo()
+	for _, dsk := range disks {
+		fmt.Printf("Device: %s \n FileSystem: %s \n MountPoint: %s \n TotalBytes: %d \n Used: %d \n Free: %d \n", dsk.Device, dsk.FStype,
+			dsk.MountPoint, dsk.TotalBytes, dsk.Used, dsk.Free)
+	}
 }
 
 // выводит название элементов среза содержимого директории
@@ -97,6 +108,8 @@ func HandlerListDir(dirpath string) error {
 func HandlerHelp() {
 	fmt.Println("Доступные команды:")
 	fmt.Println("help - список всех команд с описанием назначения каждой")
-	fmt.Println("ls path - вывод содержимого директории, где path - путь к директории")
+	fmt.Println("ls <path> - вывод содержимого директории, где path - путь к директории")
+	fmt.Println("cd <path> - изменение рабочей директории на path, где path - путь к директории")
+	fmt.Println("drives - вывести информацию о дисках")
 	fmt.Println("exit - выход")
 }
