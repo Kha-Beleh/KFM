@@ -48,34 +48,10 @@ func ExecCmd(cmd string, workDir string) (string, bool, error) {
 		HandlerHelp()
 
 	case "ls":
-		dirpath := strings.TrimLeft(arg, " ")
-		if dirpath == "" {
-			err = HandlerListDir(workDir)
-		} else if filepath.IsAbs(dirpath) {
-			err = HandlerListDir(dirpath)
-		} else {
-			err = HandlerListDir(filepath.Join(workDir, dirpath))
-		}
+		err = HandlerListDir(arg, workDir)
 
 	case "cd":
-		dirpath := strings.TrimLeft(arg, " ")
-		if (dirpath == "/" || dirpath == "\\") && runtime.GOOS == "windows" {
-			dirpath = filepath.Join(filepath.VolumeName(workDir), "\\")
-		}
-		if filepath.IsAbs(dirpath) {
-			_, err = os.Stat(dirpath)
-			if err == nil {
-				workDir = dirpath
-			}
-		} else {
-			_, err = os.Stat(filepath.Join(workDir, dirpath))
-			if err == nil {
-				workDir = filepath.Join(workDir, dirpath)
-			}
-		}
-		if err != nil {
-			err = fmt.Errorf("директории %s не существует: %v", dirpath, err)
-		}
+		workDir, err = HandlerChangeDir(arg, workDir)
 
 	case "drives":
 		HandlerDrivesInfo()
@@ -92,6 +68,29 @@ func ExecCmd(cmd string, workDir string) (string, bool, error) {
 	return workDir, shouldExit, err
 }
 
+func HandlerChangeDir(arg string, workDir string) (string, error) {
+	var err error
+	dirpath := strings.TrimLeft(arg, " ")
+	if (dirpath == "/" || dirpath == "\\") && runtime.GOOS == "windows" {
+		dirpath = filepath.Join(filepath.VolumeName(workDir), "\\")
+	}
+	if filepath.IsAbs(dirpath) {
+		_, err = os.Stat(dirpath)
+		if err == nil {
+			workDir = dirpath
+		}
+	} else {
+		_, err = os.Stat(filepath.Join(workDir, dirpath))
+		if err == nil {
+			workDir = filepath.Join(workDir, dirpath)
+		}
+	}
+	if err != nil {
+		err = fmt.Errorf("директории %s не существует: %v", dirpath, err)
+	}
+	return workDir, err
+}
+
 func HandlerDrivesInfo() {
 	disks, _ := filesystem.ListDrivesInfo()
 	for _, dsk := range disks {
@@ -101,7 +100,13 @@ func HandlerDrivesInfo() {
 }
 
 // выводит название элементов среза содержимого директории
-func HandlerListDir(dirpath string) error {
+func HandlerListDir(arg string, workDir string) error {
+	dirpath := strings.TrimLeft(arg, " ")
+	if dirpath == "" {
+		dirpath = workDir
+	} else if !filepath.IsAbs(dirpath) {
+		dirpath = filepath.Join(workDir, dirpath)
+	}
 	entries, err := filesystem.ListDir(dirpath)
 	if err != nil {
 		return err
