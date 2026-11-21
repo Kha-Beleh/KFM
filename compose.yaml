@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: kfm
+      POSTGRES_PASSWORD: ${KFM_DB_PASSWORD:?Set KFM_DB_PASSWORD}
+      POSTGRES_DB: kfm
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - kfm-postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kfm -d kfm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  kfm-postgres:

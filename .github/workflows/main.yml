@@ -1,0 +1,126 @@
+name: KFM CI CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Run the temporary local deployment
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    container: ghcr.io/catthehacker/ubuntu:act-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Build and vet
+        run: bash ci/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kfm-linux
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  test:
+    needs: build
+    runs-on: ubuntu-22.04
+    container: ghcr.io/catthehacker/ubuntu:act-22.04
+    timeout-minutes: 20
+    services:
+      db:
+        image: postgres:18.6
+        env:
+          POSTGRES_USER: kfm_ci
+          POSTGRES_DB: kfm_ci
+          POSTGRES_PASSWORD: ${{ secrets.KFM_CI_DB_PASSWORD }}
+        options: >-
+          --health-cmd "pg_isready -U kfm_ci -d kfm_ci"
+          --health-interval 3s --health-timeout 3s --health-retries 30
+    env:
+      KFM_CI_DB_PASSWORD: ${{ secrets.KFM_CI_DB_PASSWORD }}
+      KFM_TEST_DB_HOST: db
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Tests
+        run: bash ci/test.sh
+      - name: HTML coverage
+        if: always()
+        run: |
+          if test -s reports/coverage.out; then
+            go tool cover -func=reports/coverage.out | tee reports/coverage.txt
+            go tool cover -html=reports/coverage.out -o reports/coverage.html
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: reports/
+          if-no-files-found: error
+          retention-days: 7
+
+  sast:
+    needs: test
+    runs-on: ubuntu-22.04
+    container: ghcr.io/catthehacker/ubuntu:act-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan and check the blocking policy
+        uses: docker://semgrep/semgrep:1.186.0
+        with:
+          entrypoint: /bin/bash
+          args: ci/sast.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sast-reports
+          path: reports/
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    needs: sast
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true'
+    runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/catthehacker/ubuntu:act-22.04
+    timeout-minutes: 20
+    env:
+      KFM_CI_DB_PASSWORD: ${{ secrets.KFM_CI_DB_PASSWORD }}
+      COMPOSE_PROJECT_NAME: kfm-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: kfm-linux
+          path: dist/
+      - name: Deploy and smoke test
+        run: bash ci/deploy.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deploy-reports
+          path: reports/
+          if-no-files-found: error
+          retention-days: 7

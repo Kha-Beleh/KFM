@@ -1,0 +1,5 @@
+**
+!Dockerfile
+!dist/
+!dist/kfm
+!dist/kfm.sha256
