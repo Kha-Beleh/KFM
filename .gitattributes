@@ -1,0 +1,5 @@
+ci/*.sh text eol=lf
+ci/*.py text eol=lf
+.github/workflows/*.yml text eol=lf
+Dockerfile text eol=lf
+compose.ci.yaml text eol=lf

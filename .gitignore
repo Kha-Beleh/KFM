@@ -34,3 +34,12 @@ go.work.sum
 
 #open doc/docx files
 ~$*.docx
+
+# Local CI files
+.artifacts/
+.act-cache/
+.secrets
+.secrets.*
+dist/
+reports/
+__pycache__/

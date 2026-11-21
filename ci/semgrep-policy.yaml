@@ -1,0 +1,10 @@
+rules:
+  - id: kfm-shell-command
+    languages: [go]
+    severity: HIGH
+    message: Do not pass file-manager input to an operating-system shell
+    pattern-either:
+      - pattern: exec.Command("sh", "-c", ...)
+      - pattern: exec.Command("bash", "-c", ...)
+      - pattern: exec.Command("cmd", "/c", ...)
+      - pattern: exec.Command("powershell", "-Command", ...)
